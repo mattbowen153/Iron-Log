@@ -475,8 +475,12 @@ function SupersetBracket({ exA, exB, onChangeA, onChangeB, onRemoveA, onRemoveB,
 
   const lastSetsA = ((history||[]).slice().reverse().find(d=>(d.exercises||[]).some(e=>e.name===exA.name))?.exercises?.find(e=>e.name===exA.name)?.sets)||[];
   const lastSetsB = ((history||[]).slice().reverse().find(d=>(d.exercises||[]).some(e=>e.name===exB.name))?.exercises?.find(e=>e.name===exB.name)?.sets)||[];
-  const prevBestA = Math.max(0,...(history||[]).flatMap(d=>(d.exercises||[]).filter(e=>e.name===exA.name).flatMap(e=>e.sets.map(s=>e1rm(s.w,s.r)))));
-  const prevBestB = Math.max(0,...(history||[]).flatMap(d=>(d.exercises||[]).filter(e=>e.name===exB.name).flatMap(e=>e.sets.map(s=>e1rm(s.w,s.r)))));
+  const prevBestA = histSets => histSets.length > 0 ? Math.max(0,...histSets.map(s=>e1rm(s.w,s.r))) : 0;
+  const prevBestB = histSets => histSets.length > 0 ? Math.max(0,...histSets.map(s=>e1rm(s.w,s.r))) : 0;
+  const histSetsA = (history||[]).flatMap(d=>(d.exercises||[]).filter(e=>e.name===exA.name).flatMap(e=>(e.sets||[]).filter(s=>!s.warmup)));
+  const histSetsB = (history||[]).flatMap(d=>(d.exercises||[]).filter(e=>e.name===exB.name).flatMap(e=>(e.sets||[]).filter(s=>!s.warmup)));
+  const prevBestE1rmA = prevBestA(histSetsA);
+  const prevBestE1rmB = prevBestB(histSetsB);
 
   const maxSets = Math.max(exA.sets.length, exB.sets.length);
   const roundsDone = Array.from({length:maxSets}).filter((_,i)=>exA.sets[i]?.done && exB.sets[i]?.done).length;
@@ -533,8 +537,8 @@ function SupersetBracket({ exA, exB, onChangeA, onChangeB, onRemoveA, onRemoveB,
           const sA = exA.sets[i] || {w:"",r:"",p:"",done:false};
           const sB = exB.sets[i] || {w:"",r:"",p:"",done:false};
           const roundDone = sA.done && sB.done;
-          const isPRA = e1rm(sA.w,sA.r)>0 && e1rm(sA.w,sA.r)>prevBestA;
-          const isPRB = e1rm(sB.w,sB.r)>0 && e1rm(sB.w,sB.r)>prevBestB;
+          const isPRA = sA.done && e1rm(sA.w,sA.r)>0 && e1rm(sA.w,sA.r)>prevBestE1rmA;
+          const isPRB = sB.done && e1rm(sB.w,sB.r)>0 && e1rm(sB.w,sB.r)>prevBestE1rmB;
 
           return (
             <div key={i} style={{ display:"grid", gridTemplateColumns:"28px 1fr 28px 1fr 32px", gap:4, alignItems:"center",
@@ -643,11 +647,13 @@ function ExerciseBlock({ ex, onChange, onRemove, history, dayType, onStartRest, 
 
   const workingSets = ex.sets.filter(s => !s.warmup);
   const histSets = (history||[]).flatMap(d=>(d.exercises||[]).filter(e=>e.name===ex.name).flatMap(e=>(e.sets||[]).filter(s=>!s.warmup)));
-  const prevBestE1rm = Math.max(0, ...histSets.map(s=>e1rm(s.w,s.r)));
+  const prevBestE1rm = histSets.length > 0 ? Math.max(0, ...histSets.map(s=>e1rm(s.w,s.r))) : 0;
   const bestRepsAtWeight = {};
   histSets.forEach(s=>{ const w=parseFloat(s.w)||0; const r=parseInt(s.r)||0; if(w>0) bestRepsAtWeight[w]=Math.max(bestRepsAtWeight[w]||0,r); });
+  // Build PR map keyed by set index in ex.sets (warmups always null)
   const setPRs = ex.sets.map(s => {
     if (s.warmup) return null;
+    if (!s.done) return null; // only show PR badge after set is marked done
     return getPRType(s.w, s.r, prevBestE1rm, bestRepsAtWeight[parseFloat(s.w)||0] || 0);
   });
   const totalVol = Math.round(vol(workingSets));
@@ -896,6 +902,9 @@ function TodayTab({ data, onSave, onSetProgram, onSaveExNote }) {
   const [running, setRunning] = useState(false);
   const [restTimer, setRestTimer] = useState(null); // { exName, setType }
   const [timerKey, setTimerKey] = useState(0); // increment to force RestTimer remount/reset
+  const [showLocPicker, setShowLocPicker] = useState(false);
+  const [showCalc, setShowCalc] = useState(false);
+  const [workoutNote, setWorkoutNote] = useState("");
   const startRef = useRef(null);
   const history = data.history||[];
 
@@ -967,8 +976,6 @@ function TodayTab({ data, onSave, onSetProgram, onSaveExNote }) {
     setAdding(false); setCustomEx("");
   };
 
-  const [workoutNote, setWorkoutNote] = useState("");
-
   const finish = () => {
     if (!exercises.length) return;
     const w = { date:TODAY, day:dayType, location, exercises, duration:elapsed, note:workoutNote };
@@ -1006,9 +1013,6 @@ function TodayTab({ data, onSave, onSetProgram, onSaveExNote }) {
       </div>
     );
   }
-
-  const [showLocPicker, setShowLocPicker] = useState(false);
-  const [showCalc, setShowCalc] = useState(false);
 
   if (mode==="active") return (
     <div style={{ paddingTop: restTimer ? 68 : 0 }}>
